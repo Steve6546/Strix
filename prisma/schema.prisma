@@ -1,0 +1,188 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum StreakMode {
+  CALENDAR_RESET
+  ROLLING_24H
+}
+
+enum ActivityType {
+  MESSAGE
+  IMAGE
+  VIDEO
+  FILE
+  REACTION
+  VOICE
+  THREAD
+  COMMAND
+  CUSTOM
+}
+
+model Guild {
+  id        String   @id
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  settings       GuildSettings?
+  members        MemberStreak[]
+  activityEvents ActivityEvent[]
+  auditLogs      AuditLog[]
+  roles          StreakRole[]
+  rewards        Reward[]
+  restoreRequests RestoreRequest[]
+  backups        BackupRecord[]
+}
+
+model GuildSettings {
+  guildId             String     @id
+  enabled             Boolean    @default(true)
+  locale              String     @default("ar")
+  timezone            String     @default("Asia/Baghdad")
+  mode                StreakMode @default(CALENDAR_RESET)
+  resetTime           String     @default("03:00")
+  graceMinutes        Int        @default(60)
+  dailyRequiredWeight Int        @default(1)
+  activityWeights     Json       @default("{\"MESSAGE\":1}")
+  messageRules        Json       @default("{\"minLength\":2,\"ignoreBots\":true,\"ignoreRepeated\":true}")
+  voiceRules          Json       @default("{\"minMinutes\":10,\"ignoreMuted\":true,\"ignoreDeafened\":true}")
+  ignoredChannelIds   Json       @default("[]")
+  ignoredRoleIds      Json       @default("[]")
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+}
+
+model MemberStreak {
+  id                 String    @id @default(cuid())
+  guildId            String
+  userId             String
+  currentStreak      Int       @default(0)
+  highestStreak      Int       @default(0)
+  totalCompletedDays Int       @default(0)
+  totalActivities    Int       @default(0)
+  totalBrokenStreaks Int       @default(0)
+  currentDayKey      String?
+  currentDayWeight   Int       @default(0)
+  lastCompletedDay   String?
+  lastActivityAt     DateTime?
+  lastRewardAt       DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, userId])
+  @@index([guildId, currentStreak])
+  @@index([guildId, highestStreak])
+}
+
+model ActivityEvent {
+  id             String       @id @default(cuid())
+  guildId        String
+  userId         String
+  sourceEventId  String
+  type           ActivityType
+  weight         Int
+  dayKey         String
+  occurredAt     DateTime
+  metadata       Json         @default("{}")
+  createdAt      DateTime     @default(now())
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, sourceEventId])
+  @@index([guildId, userId, dayKey])
+}
+
+model StreakRole {
+  id              String    @id @default(cuid())
+  guildId         String
+  roleId          String
+  requiredDays    Int
+  removeOnBreak   Boolean   @default(true)
+  allowStacking   Boolean   @default(false)
+  priority        Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, roleId])
+  @@index([guildId, requiredDays])
+}
+
+model Reward {
+  id           String    @id @default(cuid())
+  guildId      String
+  name         String
+  type         String
+  requiredDays Int
+  repeatable   Boolean   @default(false)
+  payload      Json      @default("{}")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, requiredDays])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  guildId   String
+  actorId   String?
+  action    String
+  entity    String
+  entityId  String?
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now())
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, createdAt])
+}
+
+model RestoreRequest {
+  id              String    @id @default(cuid())
+  guildId         String
+  userId          String
+  provider        String
+  amount          Int
+  status          String    @default("PENDING")
+  externalEventId String?
+  expiresAt       DateTime
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, provider, externalEventId])
+  @@index([guildId, userId, status])
+}
+
+model BackupRecord {
+  id        String   @id @default(cuid())
+  guildId   String?
+  kind      String
+  path      String
+  checksum  String
+  sizeBytes BigInt
+  createdAt DateTime @default(now())
+
+  guild Guild? @relation(fields: [guildId], references: [id], onDelete: SetNull)
+
+  @@index([guildId, createdAt])
+}
