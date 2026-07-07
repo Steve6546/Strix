@@ -1,4 +1,4 @@
-import type { ActivityType, GuildSettings, Prisma } from "@prisma/client";
+import type { ActivityType, GuildSettings, Prisma, MemberStreak } from "@prisma/client";
 import { prisma } from "../db.js";
 import { getDayKey, previousDayKey } from "./calendar.js";
 
@@ -34,6 +34,25 @@ export async function recordActivity(input: RecordActivityInput) {
 
     if (shouldIgnoreActivity(settings, input)) {
       return { status: "ignored" as const };
+    }
+
+    // limitOneSessionPerDay check for VOICE activities
+    if (input.type === "VOICE") {
+      const voiceRules = settings.voiceRules as Record<string, any>;
+      if (voiceRules.limitOneSessionPerDay) {
+        const dayKey = getDayKey(input.occurredAt, settings);
+        const existingVoice = await tx.activityEvent.findFirst({
+          where: {
+            guildId: input.guildId,
+            userId: input.userId,
+            type: "VOICE",
+            dayKey
+          }
+        });
+        if (existingVoice) {
+          return { status: "ignored" as const };
+        }
+      }
     }
 
     const weight = resolveWeight(settings, input.type);
@@ -121,6 +140,9 @@ export async function recordActivity(input: RecordActivityInput) {
           }
         }
       });
+
+      // Apply Rewards & Roles if streak increases
+      await checkAndApplyRewards(tx, updated, currentStreak);
     }
 
     return { status: completesDay ? "completed" : "recorded", member: updated };
@@ -164,3 +186,63 @@ function shouldIgnoreActivity(settings: GuildSettings, input: RecordActivityInpu
 function isUniqueConflict(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
 }
+
+async function checkAndApplyRewards(tx: any, member: MemberStreak, currentStreak: number) {
+  // Fetch rewards configured for this guild at this specific milestone
+  const rewards = await tx.reward.findMany({
+    where: { guildId: member.guildId, requiredDays: currentStreak, deletedAt: null }
+  });
+
+  for (const reward of rewards) {
+    // Record audit log for rewards received
+    await tx.auditLog.create({
+      data: {
+        guildId: member.guildId,
+        actorId: member.userId,
+        action: "REWARD_EARNED",
+        entity: "Reward",
+        entityId: reward.id,
+        after: {
+          name: reward.name,
+          type: reward.type,
+          requiredDays: reward.requiredDays
+        }
+      }
+    });
+  }
+
+  // Fetch roles configuration
+  const streakRoles = await tx.streakRole.findMany({
+    where: { guildId: member.guildId, requiredDays: { lte: currentStreak }, deletedAt: null },
+    orderBy: { priority: "desc" }
+  });
+
+  if (streakRoles.length > 0) {
+    // Find matching role rules
+    const rolesToAward = [];
+    const highestPriorityRole = streakRoles[0];
+
+    for (const role of streakRoles) {
+      if (role.allowStacking || role.roleId === highestPriorityRole.roleId) {
+        rolesToAward.push(role.roleId);
+      }
+    }
+
+    // These role updates will be handled by external workers or events, 
+    // we log this in AuditLogs for later processing.
+    await tx.auditLog.create({
+      data: {
+        guildId: member.guildId,
+        actorId: member.userId,
+        action: "ROLES_MATCHED",
+        entity: "MemberStreak",
+        entityId: member.id,
+        after: {
+          rolesToAward,
+          currentStreak
+        }
+      }
+    });
+  }
+}
+

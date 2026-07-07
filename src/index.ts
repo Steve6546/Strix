@@ -8,18 +8,23 @@ async function main() {
   await prisma.$connect();
 
   const discord = createDiscordClient();
-  const app = createWebServer();
+  const app = createWebServer(discord.client);
 
   app.listen(config.WEB_PORT, () => {
     console.log(`Dashboard listening on ${config.PUBLIC_BASE_URL}`);
   });
 
   startStreakMaintenance();
-  await discord.login();
+  try {
+    await discord.login();
+  } catch (error) {
+    console.error("Failed to login to Discord bot on startup:", error);
+  }
 }
 
 main().catch(async (error) => {
-  console.error(error);
+  console.error("Unhandled boot error:", error);
   await prisma.$disconnect();
   process.exit(1);
 });
+

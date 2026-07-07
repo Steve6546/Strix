@@ -17,10 +17,16 @@ enum ActivityType {
   IMAGE
   VIDEO
   FILE
+  STICKER
   REACTION
   VOICE
+  VOICE_STREAM
+  SCREEN_SHARE
   THREAD
+  REPLY
   COMMAND
+  BOT_INTERACTION
+  TICKET_OPEN
   CUSTOM
 }
 
@@ -49,11 +55,20 @@ model GuildSettings {
   resetTime           String     @default("03:00")
   graceMinutes        Int        @default(60)
   dailyRequiredWeight Int        @default(1)
-  activityWeights     Json       @default("{\"MESSAGE\":1}")
-  messageRules        Json       @default("{\"minLength\":2,\"ignoreBots\":true,\"ignoreRepeated\":true}")
-  voiceRules          Json       @default("{\"minMinutes\":10,\"ignoreMuted\":true,\"ignoreDeafened\":true}")
+  activityWeights     Json       @default("{\"MESSAGE\":1,\"IMAGE\":3,\"VIDEO\":3,\"FILE\":2,\"STICKER\":2,\"REACTION\":1,\"VOICE\":1,\"VOICE_STREAM\":3,\"SCREEN_SHARE\":3,\"THREAD\":2,\"REPLY\":1,\"COMMAND\":1,\"BOT_INTERACTION\":1,\"TICKET_OPEN\":5,\"CUSTOM\":1}")
+  messageRules        Json       @default("{\"minLength\":2,\"ignoreBots\":true,\"ignoreRepeated\":true,\"ignoreSpam\":true,\"ignoreDeleted\":true,\"ignoreEdited\":true}")
+  voiceRules          Json       @default("{\"minMinutes\":10,\"ignoreMuted\":true,\"ignoreDeafened\":true,\"ignoreAFK\":true,\"realTimeOnly\":true,\"limitOneSessionPerDay\":false}")
   ignoredChannelIds   Json       @default("[]")
   ignoredRoleIds      Json       @default("[]")
+  leaderboardSettings Json       @default("{\"limit\":25,\"excludeBots\":true,\"ignoredRoleIds\":[],\"channelId\":\"\",\"autoUpdate\":false,\"intervalMinutes\":60,\"messageId\":\"\"}")
+  backupSettings      Json       @default("{\"enabled\":false,\"interval\":\"DAILY\",\"keepCount\":5}")
+  
+  // ProBot Streak Restore Settings
+  restoreEnabled       Boolean    @default(false)
+  restorePrice         Int        @default(1000)
+  restoreRecipientId   String     @default("")
+  restoreTimeoutHours  Int        @default(24)
+
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 
@@ -186,3 +201,4 @@ model BackupRecord {
 
   @@index([guildId, createdAt])
 }
+
